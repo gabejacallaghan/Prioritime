@@ -12,6 +12,7 @@ struct LogView: View {
     @State private var showingNewActivity = false
     @State private var toast: String?
     @State private var editingEntry: TimeEntry?
+    @State private var showingCheckIn = false
 
     private var totalMinutes: Int { hours * 60 + minutes }
     private var selectedActivity: Activity? {
@@ -31,6 +32,10 @@ struct LogView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    if CheckInPrompt.isDue(settings: store.checkInSettings,
+                                           hasCheckIn: store.checkIn(on: Date()) != nil) {
+                        CheckInPrompt { showingCheckIn = true }
+                    }
                     activitySection
                     durationSection
                     detailsSection
@@ -59,6 +64,10 @@ struct LogView: View {
                     selectedActivityID = newActivity.id
                 }
                 .environmentObject(store)
+            }
+            .sheet(isPresented: $showingCheckIn) {
+                CheckInEditorView(day: Date(), existing: store.checkIn(on: Date()))
+                    .environmentObject(store)
             }
             .sheet(item: $editingEntry) { entry in
                 EntryEditorView(entry: entry).environmentObject(store)

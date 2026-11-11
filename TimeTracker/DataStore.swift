@@ -5,10 +5,15 @@ import SwiftUI
 final class DataStore: ObservableObject {
     @Published private(set) var activities: [Activity] = []
     @Published private(set) var entries: [TimeEntry] = []
+    @Published private(set) var checkIns: [CheckIn] = []
+    @Published private(set) var checkInSettings = CheckInSettings()
 
     private struct SaveFile: Codable {
         var activities: [Activity]
         var entries: [TimeEntry]
+        // Optional so files saved before check-ins existed still load.
+        var checkIns: [CheckIn]?
+        var checkInSettings: CheckInSettings?
     }
 
     private let fileURL: URL
@@ -83,6 +88,48 @@ final class DataStore: ObservableObject {
         entries.filter { $0.date >= start && $0.date < end }
     }
 
+    // MARK: Check-ins
+
+    func checkIn(on day: Date) -> CheckIn? {
+        let start = Calendar.current.startOfDay(for: day)
+        return checkIns.first { $0.day == start }
+    }
+
+    /// One check-in per day: saving again replaces the earlier one.
+    func saveCheckIn(day: Date, rating: Int, tags: [String], note: String) {
+        let start = Calendar.current.startOfDay(for: day)
+        if let i = checkIns.firstIndex(where: { $0.day == start }) {
+            checkIns[i].rating = rating
+            checkIns[i].tags = tags
+            checkIns[i].note = note
+        } else {
+            checkIns.append(CheckIn(day: start, rating: rating, tags: tags, note: note))
+        }
+        save()
+    }
+
+    func deleteCheckIn(_ checkIn: CheckIn) {
+        checkIns.removeAll { $0.id == checkIn.id }
+        save()
+    }
+
+    func updateCheckInSettings(_ settings: CheckInSettings) {
+        checkInSettings = settings
+        save()
+    }
+
+    /// Adds a user-made tag and returns its stored form, or nil if it was empty.
+    func addCustomTag(_ raw: String) -> String? {
+        let tag = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !tag.isEmpty else { return nil }
+        let known = Mood.presetTags + checkInSettings.customTags
+        if !known.contains(tag) {
+            checkInSettings.customTags.append(tag)
+            save()
+        }
+        return tag
+    }
+
     // MARK: Persistence
 
     private func load() {
@@ -90,6 +137,8 @@ final class DataStore: ObservableObject {
            let file = try? JSONDecoder().decode(SaveFile.self, from: data) {
             activities = file.activities
             entries = file.entries
+            checkIns = file.checkIns ?? []
+            checkInSettings = file.checkInSettings ?? CheckInSettings()
         } else {
             activities = Self.defaultActivities
             entries = []
@@ -98,7 +147,8 @@ final class DataStore: ObservableObject {
     }
 
     private func save() {
-        let file = SaveFile(activities: activities, entries: entries)
+        let file = SaveFile(activities: activities, entries: entries,
+                            checkIns: checkIns, checkInSettings: checkInSettings)
         do {
             let data = try JSONEncoder().encode(file)
             try data.write(to: fileURL, options: [.atomic, .completeFileProtection])

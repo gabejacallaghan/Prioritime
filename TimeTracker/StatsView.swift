@@ -19,6 +19,7 @@ struct StatsView: View {
     @EnvironmentObject private var store: DataStore
     @State private var kind: PeriodKind = .week
     @State private var offset = 0
+    @State private var showingAI = false
 
     private var period: Period { Period(kind: kind, offset: offset) }
 
@@ -43,6 +44,24 @@ struct StatsView: View {
                     periodNavigator(period)
                     summaryCard(total: total, activityCount: rows.count)
 
+                    Button { showingAI = true } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "sparkles").font(.title3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Insights").font(.headline)
+                                Text("Use AI to find patterns in your time and your days")
+                                    .font(.caption)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                        }
+                        .padding()
+                        .foregroundColor(.white)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.accentColor))
+                    }
+                    .buttonStyle(.plain)
+
                     Card(title: "Where your time went") {
                         if rows.isEmpty {
                             emptyChart
@@ -57,11 +76,13 @@ struct StatsView: View {
                         }
                     }
 
+                    if !store.checkIns.isEmpty || store.checkInSettings.enabled {
+                        MoodCard(checkIns: store.checkIns.filter { period.contains($0.day) }, period: period)
+                    }
+
                     Card(title: "Insights") {
                         VStack(alignment: .leading, spacing: 14) {
-                            ForEach(InsightsEngine.insights(activities: store.activities,
-                                                            allEntries: store.entries,
-                                                            period: period)) { insight in
+                            ForEach(insights(for: period)) { insight in
                                 HStack(alignment: .top, spacing: 12) {
                                     Image(systemName: insight.symbol)
                                         .font(.body.weight(.semibold))
@@ -79,8 +100,17 @@ struct StatsView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Stats")
+            .sheet(isPresented: $showingAI) {
+                AIInsightsView().environmentObject(store)
+            }
             .onChange(of: kind) { _ in offset = 0 }
         }
+    }
+
+    private func insights(for period: Period) -> [Insight] {
+        InsightsEngine.insights(activities: store.activities, allEntries: store.entries, period: period)
+            + MoodInsights.insights(checkIns: store.checkIns, allEntries: store.entries,
+                                    activities: store.activities, period: period)
     }
 
     // MARK: Pieces
